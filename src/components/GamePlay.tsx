@@ -1,6 +1,6 @@
 
-import { useState, useEffect } from 'react';
-import { Heart, Clock, MessageCircle, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { Heart, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -121,8 +121,8 @@ const GamePlay = ({ gameState, setGameState }: GamePlayProps) => {
             {currentPlayer?.name}'s Turn
           </CardTitle>
           <CardDescription>
-            Questions asked: {currentPlayer?.questionsAsked}/5 • 
-            Skipped explanations: {currentPlayer?.skippedExplanations}
+            Questions asked: {currentPlayer?.questionsAsked || 0}/5 • 
+            Skipped explanations: {currentPlayer?.skippedExplanations || 0}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -143,7 +143,7 @@ const GamePlay = ({ gameState, setGameState }: GamePlayProps) => {
               value={currentInput}
               onChange={(e) => setCurrentInput(e.target.value)}
               placeholder="What would you like to ask your partner? 💭"
-              className="min-h-[80px]"
+              className="min-h-[80px] border-pink-200 focus:border-pink-400"
             />
             <Button 
               onClick={handleQuestionSubmit}
@@ -174,7 +174,7 @@ const GamePlay = ({ gameState, setGameState }: GamePlayProps) => {
               value={currentInput}
               onChange={(e) => setCurrentInput(e.target.value)}
               placeholder="YES or NO"
-              className="text-center text-lg font-semibold"
+              className="text-center text-lg font-semibold border-pink-200 focus:border-pink-400"
               onKeyPress={(e) => e.key === 'Enter' && handleAnswerSubmit()}
             />
             <Button 
