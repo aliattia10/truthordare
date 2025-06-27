@@ -1,8 +1,8 @@
-
 import { useState } from 'react';
 import GameStart from '@/components/GameStart';
 import GamePlay from '@/components/GamePlay';
 import GameEnd from '@/components/GameEnd';
+import OnlineGamePlay from '@/components/OnlineGamePlay';
 
 export interface Player {
   name: string;
@@ -20,6 +20,7 @@ export interface GameState {
   currentQuestion: string;
   currentAnswer: string;
   dareCount: number;
+  isOnline?: boolean;
 }
 
 const Index = () => {
@@ -34,7 +35,8 @@ const Index = () => {
     waitingFor: 'question',
     currentQuestion: '',
     currentAnswer: '',
-    dareCount: 0
+    dareCount: 0,
+    isOnline: false
   });
 
   return (
@@ -43,7 +45,10 @@ const Index = () => {
         {gameState.phase === 'start' && (
           <GameStart gameState={gameState} setGameState={setGameState} />
         )}
-        {gameState.phase === 'playing' && (
+        {gameState.phase === 'playing' && gameState.isOnline && (
+          <OnlineGamePlay gameState={gameState} setGameState={setGameState} />
+        )}
+        {gameState.phase === 'playing' && !gameState.isOnline && (
           <GamePlay gameState={gameState} setGameState={setGameState} />
         )}
         {gameState.phase === 'end' && (
