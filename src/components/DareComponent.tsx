@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { Zap, Heart, Music, MessageHeart } from 'lucide-react';
+import { Zap, Heart, Music, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -18,7 +18,7 @@ const DareComponent = ({ onComplete }: DareComponentProps) => {
       category: "romantic"
     },
     {
-      icon: <MessageHeart className="w-6 h-6 text-purple-500" />,
+      icon: <MessageCircle className="w-6 h-6 text-purple-500" />,
       text: "Tell your partner your favorite memory with them in exactly 3 sentences 💭✨",
       category: "emotional"
     },
@@ -33,7 +33,7 @@ const DareComponent = ({ onComplete }: DareComponentProps) => {
       category: "fun"
     },
     {
-      icon: <MessageHeart className="w-6 h-6 text-purple-500" />,
+      icon: <MessageCircle className="w-6 h-6 text-purple-500" />,
       text: "Whisper the moment you knew you had feelings for each other 💕👂",
       category: "intimate"
     },
