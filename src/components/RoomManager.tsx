@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Heart, Users, Copy, Check, Globe, Home } from 'lucide-react';
+import { Heart, Users, Copy, Check, Globe, Home, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from '@/hooks/use-toast';
 import { GameState } from '@/pages/Index';
 import socketService, { RoomData, PlayerData } from '@/services/socketService';
@@ -22,44 +23,99 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
   const [copied, setCopied] = useState(false);
   const [availableRooms, setAvailableRooms] = useState<RoomData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Initialize socket connection
-    socketService.connect();
-    setIsConnected(true);
+    let mounted = true;
+
+    const initializeConnection = async () => {
+      try {
+        setConnectionError(null);
+        console.log('🔌 Initializing socket connection...');
+        
+        // Initialize socket connection
+        socketService.connect();
+        
+        // Wait a bit for connection to establish
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (!mounted) return;
+        
+        const connected = socketService.isConnected();
+        setIsConnected(connected);
+        
+        if (!connected) {
+          setConnectionError('Unable to connect to server. Please check your internet connection.');
+          return;
+        }
+
+        console.log('✅ Socket connection established');
+      } catch (error) {
+        console.error('❌ Failed to initialize connection:', error);
+        if (mounted) {
+          setConnectionError('Failed to connect to server. Please try again.');
+          setIsConnected(false);
+        }
+      }
+    };
 
     // Set up event listeners
-    socketService.on('room-created', (roomId: string) => {
-      setRoomId(roomId);
-      setIsLoading(false);
-      toast({
-        title: "Room created!",
-        description: `Share this room code: ${roomId}`,
+    const setupEventListeners = () => {
+      socketService.on('room-created', (roomId: string) => {
+        if (!mounted) return;
+        console.log('✅ Room created successfully:', roomId);
+        setRoomId(roomId);
+        setIsLoading(false);
+        toast({
+          title: "Room created!",
+          description: `Share this room code: ${roomId}`,
+        });
       });
-    });
 
-    socketService.on('player-joined', (player: PlayerData) => {
-      setIsLoading(false);
-      toast({
-        title: "Player joined!",
-        description: `${player.name} has joined the room.`,
+      socketService.on('joined-room', (roomData: RoomData) => {
+        if (!mounted) return;
+        console.log('✅ Successfully joined room:', roomData);
+        setIsLoading(false);
+        toast({
+          title: "Joined room!",
+          description: `Welcome to room ${roomData.id}`,
+        });
       });
-    });
 
-    socketService.on('room-list-update', (rooms: RoomData[]) => {
-      setAvailableRooms(rooms);
-    });
-
-    socketService.on('error', (error: string) => {
-      setIsLoading(false);
-      toast({
-        title: "Error",
-        description: error,
-        variant: "destructive",
+      socketService.on('player-joined', (player: PlayerData) => {
+        if (!mounted) return;
+        console.log('✅ Player joined:', player);
+        setIsLoading(false);
+        toast({
+          title: "Player joined!",
+          description: `${player.name} has joined the room.`,
+        });
       });
-    });
+
+      socketService.on('room-list-update', (rooms: RoomData[]) => {
+        if (!mounted) return;
+        console.log('📋 Room list updated:', rooms);
+        setAvailableRooms(rooms);
+      });
+
+      socketService.on('error', (error: string) => {
+        if (!mounted) return;
+        console.error('❌ Socket error:', error);
+        setIsLoading(false);
+        setConnectionError(error);
+        toast({
+          title: "Error",
+          description: error,
+          variant: "destructive",
+        });
+      });
+    };
+
+    setupEventListeners();
+    initializeConnection();
 
     return () => {
+      mounted = false;
       socketService.disconnect();
     };
   }, []);
@@ -74,9 +130,23 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
       return;
     }
 
+    if (!isConnected) {
+      toast({
+        title: "Connection error",
+        description: "Not connected to server. Please refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
+    setConnectionError(null);
+    
     try {
+      console.log('🚀 Attempting to create room...');
       const newRoomId = await socketService.createRoom(playerName);
+      
+      console.log('✅ Room created successfully:', newRoomId);
       
       // Update game state for online play
       const newState = { ...gameState };
@@ -86,11 +156,14 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
       newState.players[0].isCurrentPlayer = true;
       newState.isOnline = true;
       setGameState(newState);
-    } catch (error) {
+      
+    } catch (error: any) {
+      console.error('❌ Failed to create room:', error);
       setIsLoading(false);
+      setConnectionError(error.message || 'Failed to create room');
       toast({
         title: "Error creating room",
-        description: "Please try again.",
+        description: error.message || "Please try again.",
         variant: "destructive",
       });
     }
@@ -106,11 +179,25 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
       return;
     }
 
+    if (!isConnected) {
+      toast({
+        title: "Connection error",
+        description: "Not connected to server. Please refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
+    setConnectionError(null);
+    
     try {
+      console.log('🚀 Attempting to join room...');
       const success = await socketService.joinRoom(roomId, playerName);
       
       if (success) {
+        console.log('✅ Successfully joined room');
+        
         // Update game state for online play
         const newState = { ...gameState };
         newState.players[1].name = playerName;
@@ -120,11 +207,13 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
         newState.isOnline = true;
         setGameState(newState);
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('❌ Failed to join room:', error);
       setIsLoading(false);
+      setConnectionError(error.message || 'Failed to join room');
       toast({
         title: "Error joining room",
-        description: "Please check the room code and try again.",
+        description: error.message || "Please check the room code and try again.",
         variant: "destructive",
       });
     }
@@ -140,6 +229,19 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
     });
   };
 
+  const retryConnection = () => {
+    setConnectionError(null);
+    setIsConnected(false);
+    socketService.disconnect();
+    
+    setTimeout(() => {
+      socketService.connect();
+      setTimeout(() => {
+        setIsConnected(socketService.isConnected());
+      }, 1000);
+    }, 500);
+  };
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="text-center mb-8">
@@ -152,6 +254,23 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
         </div>
         <p className="text-lg text-gray-600">💞 Play with your partner online! 💞</p>
       </div>
+
+      {connectionError && (
+        <Alert className="mb-6 border-red-200 bg-red-50">
+          <AlertCircle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-800">
+            {connectionError}
+            <Button 
+              onClick={retryConnection} 
+              variant="outline" 
+              size="sm" 
+              className="ml-2 h-6 text-xs"
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {mode === 'select' && (
         <Card className="backdrop-blur-sm bg-white/80 border-blue-200 shadow-xl mb-6">
@@ -168,14 +287,16 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Button
                 onClick={() => setMode('create')}
-                className="h-16 text-lg bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 transform hover:scale-105 transition-all duration-200"
+                disabled={!isConnected}
+                className="h-16 text-lg bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Heart className="w-5 h-5 mr-2" />
                 Create Room
               </Button>
               <Button
                 onClick={() => setMode('join')}
-                className="h-16 text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200"
+                disabled={!isConnected}
+                className="h-16 text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Heart className="w-5 h-5 mr-2" />
                 Join Room
@@ -218,13 +339,14 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
                 placeholder="Enter your name"
                 className="border-blue-200 focus:border-blue-400"
                 disabled={isLoading}
+                maxLength={20}
               />
             </div>
             
             <Button
               onClick={createRoom}
               className="w-full h-12 text-lg bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
-              disabled={isLoading}
+              disabled={isLoading || !isConnected || !playerName.trim()}
             >
               {isLoading ? 'Creating Room...' : 'Create Room'}
             </Button>
@@ -285,6 +407,7 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
                 placeholder="Enter your name"
                 className="border-purple-200 focus:border-purple-400"
                 disabled={isLoading}
+                maxLength={20}
               />
             </div>
             
@@ -305,30 +428,35 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
             <Button
               onClick={joinRoom}
               className="w-full h-12 text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-              disabled={isLoading}
+              disabled={isLoading || !isConnected || !playerName.trim() || !roomId.trim()}
             >
               {isLoading ? 'Joining Room...' : 'Join Room'}
             </Button>
 
             <div className="pt-4 border-t border-gray-200">
               <h3 className="font-semibold text-purple-700 mb-2">Available Rooms:</h3>
-              <div className="space-y-2">
-                {availableRooms.map((room) => (
-                  <div
-                    key={room.id}
-                    className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
-                  >
-                    <div>
-                      <span className="font-mono text-sm">{room.id}</span>
-                      <div className="text-xs text-gray-500">
-                        Players: {room.players.map(p => p.name).join(', ')}
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {availableRooms.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-2">No rooms available</p>
+                ) : (
+                  availableRooms.map((room) => (
+                    <div
+                      key={room.id}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50"
+                      onClick={() => !room.isFull && setRoomId(room.id)}
+                    >
+                      <div>
+                        <span className="font-mono text-sm font-semibold">{room.id}</span>
+                        <div className="text-xs text-gray-500">
+                          Players: {room.players.map(p => p.name).join(', ')}
+                        </div>
                       </div>
+                      <Badge variant={room.isFull ? "destructive" : "default"}>
+                        {room.isFull ? "Full" : "Available"}
+                      </Badge>
                     </div>
-                    <Badge variant={room.isFull ? "destructive" : "default"}>
-                      {room.isFull ? "Full" : "Available"}
-                    </Badge>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
@@ -353,4 +481,4 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
   );
 };
 
-export default RoomManager; 
+export default RoomManager;
