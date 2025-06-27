@@ -1,7 +1,9 @@
 
-import { Heart, Users } from 'lucide-react';
+import { useState } from 'react';
+import { Heart, Users, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { GameState } from '@/pages/Index';
 
 interface GameStartProps {
@@ -10,9 +12,20 @@ interface GameStartProps {
 }
 
 const GameStart = ({ gameState, setGameState }: GameStartProps) => {
+  const [playerNames, setPlayerNames] = useState(['Player 1', 'Player 2']);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const updatePlayerName = (index: number, name: string) => {
+    const newNames = [...playerNames];
+    newNames[index] = name || `Player ${index + 1}`;
+    setPlayerNames(newNames);
+  };
+
   const startGame = (firstPlayer: number) => {
     const newState = { ...gameState };
     newState.phase = 'playing';
+    newState.players[0].name = playerNames[0];
+    newState.players[1].name = playerNames[1];
     newState.players[firstPlayer].isCurrentPlayer = true;
     setGameState(newState);
   };
@@ -29,6 +42,35 @@ const GameStart = ({ gameState, setGameState }: GameStartProps) => {
         </div>
         <p className="text-lg text-gray-600">💞 A romantic game for two lovebirds 💞</p>
       </div>
+
+      <Card className="backdrop-blur-sm bg-white/80 border-pink-200 shadow-xl mb-6">
+        <CardHeader className="text-center">
+          <CardTitle className="flex items-center justify-center text-2xl text-purple-700">
+            <Users className="w-6 h-6 mr-2" />
+            Player Names
+          </CardTitle>
+          <CardDescription>
+            Customize your names for a personal touch! 💕
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {playerNames.map((name, index) => (
+              <div key={index} className="space-y-2">
+                <label className="text-sm font-medium text-purple-700">
+                  Player {index + 1}:
+                </label>
+                <Input
+                  value={name}
+                  onChange={(e) => updatePlayerName(index, e.target.value)}
+                  placeholder={`Player ${index + 1}`}
+                  className="border-pink-200 focus:border-pink-400"
+                />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="backdrop-blur-sm bg-white/80 border-pink-200 shadow-xl">
         <CardHeader className="text-center">
@@ -47,14 +89,14 @@ const GameStart = ({ gameState, setGameState }: GameStartProps) => {
               className="h-16 text-lg bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 transform hover:scale-105 transition-all duration-200"
             >
               <Heart className="w-5 h-5 mr-2" />
-              Ali starts! 💪
+              {playerNames[0]} starts! 💪
             </Button>
             <Button
               onClick={() => startGame(1)}
               className="h-16 text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200"
             >
               <Heart className="w-5 h-5 mr-2" />
-              His Girlfriend starts! 💫
+              {playerNames[1]} starts! 💫
             </Button>
           </div>
           

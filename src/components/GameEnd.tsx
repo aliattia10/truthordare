@@ -29,8 +29,8 @@ const GameEnd = ({ gameState, setGameState }: GameEndProps) => {
     setGameState({
       phase: 'start',
       players: [
-        { name: 'Ali', questionsAsked: 0, skippedExplanations: 0, isCurrentPlayer: false },
-        { name: 'His Girlfriend', questionsAsked: 0, skippedExplanations: 0, isCurrentPlayer: false }
+        { name: 'Player 1', questionsAsked: 0, skippedExplanations: 0, isCurrentPlayer: false },
+        { name: 'Player 2', questionsAsked: 0, skippedExplanations: 0, isCurrentPlayer: false }
       ],
       currentRound: 1,
       totalRounds: 6,
