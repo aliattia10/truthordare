@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Heart, Users, Wifi, WifiOff, MessageCircle, Clock } from 'lucide-react';
+import { Heart, Users, Wifi, WifiOff, MessageCircle, Clock, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,7 @@ const OnlineGamePlay = ({ gameState, setGameState }: OnlineGamePlayProps) => {
   const [opponentName, setOpponentName] = useState<string>('Waiting for player...');
   const [showTimer, setShowTimer] = useState(false);
   const [timeLeft, setTimeLeft] = useState(60);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     // Get current room info
@@ -52,9 +53,19 @@ const OnlineGamePlay = ({ gameState, setGameState }: OnlineGamePlayProps) => {
       });
     });
 
+    socketService.on('disconnect', () => {
+      setIsConnected(false);
+    });
+
     // Determine if it's this player's turn
     const currentPlayer = gameState.players.find(p => p.isCurrentPlayer);
     setIsMyTurn(currentPlayer?.name === currentPlayerName);
+
+    // Set opponent name from game state
+    const opponent = gameState.players.find(p => p.name !== currentPlayerName);
+    if (opponent && opponent.name !== 'Waiting for player...') {
+      setOpponentName(opponent.name);
+    }
 
     return () => {
       // Cleanup
@@ -118,6 +129,18 @@ const OnlineGamePlay = ({ gameState, setGameState }: OnlineGamePlayProps) => {
     handleSkipExplanation();
   };
 
+  const copyRoomCode = () => {
+    if (roomId) {
+      navigator.clipboard.writeText(roomId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Room code copied!",
+        description: "Share this code with your partner.",
+      });
+    }
+  };
+
   const getCurrentAction = () => {
     if (showTimer) {
       return 'explanation';
@@ -143,8 +166,16 @@ const OnlineGamePlay = ({ gameState, setGameState }: OnlineGamePlayProps) => {
             {isConnected ? "Connected" : "Disconnected"}
           </Badge>
           {roomId && (
-            <Badge variant="outline" className="font-mono">
+            <Badge variant="outline" className="font-mono flex items-center">
               Room: {roomId}
+              <Button
+                onClick={copyRoomCode}
+                size="sm"
+                variant="ghost"
+                className="h-4 w-4 p-0 ml-2"
+              >
+                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              </Button>
             </Badge>
           )}
         </div>
@@ -202,9 +233,7 @@ const OnlineGamePlay = ({ gameState, setGameState }: OnlineGamePlayProps) => {
           </CardHeader>
           <CardContent className="text-center">
             <TimerComponent 
-              duration={60} 
               onComplete={handleTimerComplete}
-              onTimeUpdate={setTimeLeft}
             />
             <div className="mt-4">
               <Button
@@ -309,4 +338,4 @@ const OnlineGamePlay = ({ gameState, setGameState }: OnlineGamePlayProps) => {
   );
 };
 
-export default OnlineGamePlay; 
+export default OnlineGamePlay;

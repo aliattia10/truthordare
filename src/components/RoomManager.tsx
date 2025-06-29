@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Heart, Users, Copy, Check, Globe, Home, AlertCircle } from 'lucide-react';
+import { Heart, Users, Copy, Check, Globe, Home, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,7 +16,7 @@ interface RoomManagerProps {
 }
 
 const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProps) => {
-  const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
+  const [mode, setMode] = useState<'select' | 'create' | 'join' | 'in-room'>('select');
   const [roomId, setRoomId] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -24,6 +24,7 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
   const [availableRooms, setAvailableRooms] = useState<RoomData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [currentRoomData, setCurrentRoomData] = useState<RoomData | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -31,65 +32,125 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
     const initializeConnection = async () => {
       try {
         setConnectionError(null);
+        setIsLoading(true);
         console.log('🔌 Initializing socket connection...');
         
-        // Initialize socket connection
-        socketService.connect();
-        
-        // Wait a bit for connection to establish
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await socketService.connect();
         
         if (!mounted) return;
         
-        const connected = socketService.isConnected();
-        setIsConnected(connected);
-        
-        if (!connected) {
-          setConnectionError('Unable to connect to server. Please check your internet connection.');
-          return;
-        }
-
+        setIsConnected(true);
         console.log('✅ Socket connection established');
       } catch (error) {
         console.error('❌ Failed to initialize connection:', error);
         if (mounted) {
-          setConnectionError('Failed to connect to server. Please try again.');
+          setConnectionError(error.message || 'Failed to connect to server');
           setIsConnected(false);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
         }
       }
     };
 
-    // Set up event listeners
     const setupEventListeners = () => {
       socketService.on('room-created', (roomId: string) => {
         if (!mounted) return;
         console.log('✅ Room created successfully:', roomId);
         setRoomId(roomId);
         setIsLoading(false);
+        setMode('in-room');
+        
+        // Update current room data
+        setCurrentRoomData({
+          id: roomId,
+          players: [{ id: 'host', name: playerName, isHost: true }],
+          isFull: false
+        });
+
         toast({
           title: "Room created!",
           description: `Share this room code: ${roomId}`,
         });
+
+        // Update game state for online play
+        const newState = { ...gameState };
+        newState.players[0].name = playerName;
+        newState.players[1].name = 'Waiting for player...';
+        newState.phase = 'playing';
+        newState.players[0].isCurrentPlayer = true;
+        newState.isOnline = true;
+        setGameState(newState);
       });
 
       socketService.on('joined-room', (roomData: RoomData) => {
         if (!mounted) return;
         console.log('✅ Successfully joined room:', roomData);
         setIsLoading(false);
+        setMode('in-room');
+        setCurrentRoomData(roomData);
+        
         toast({
           title: "Joined room!",
           description: `Welcome to room ${roomData.id}`,
         });
+
+        // Update game state for online play
+        const newState = { ...gameState };
+        newState.players[1].name = playerName;
+        newState.players[0].name = roomData.players[0]?.name || 'Host';
+        newState.phase = 'playing';
+        newState.players[1].isCurrentPlayer = false;
+        newState.isOnline = true;
+        setGameState(newState);
       });
 
       socketService.on('player-joined', (player: PlayerData) => {
         if (!mounted) return;
         console.log('✅ Player joined:', player);
-        setIsLoading(false);
+        
+        // Update current room data
+        if (currentRoomData) {
+          const updatedRoom = { ...currentRoomData };
+          updatedRoom.players.push(player);
+          updatedRoom.isFull = updatedRoom.players.length >= 2;
+          setCurrentRoomData(updatedRoom);
+        }
+
         toast({
           title: "Player joined!",
           description: `${player.name} has joined the room.`,
         });
+
+        // Update game state
+        const newState = { ...gameState };
+        newState.players[1].name = player.name;
+        setGameState(newState);
+      });
+
+      socketService.on('player-left', (playerId: string) => {
+        if (!mounted) return;
+        console.log('❌ Player left:', playerId);
+        
+        // Update current room data
+        if (currentRoomData) {
+          const updatedRoom = { ...currentRoomData };
+          updatedRoom.players = updatedRoom.players.filter(p => p.id !== playerId);
+          updatedRoom.isFull = false;
+          setCurrentRoomData(updatedRoom);
+        }
+
+        toast({
+          title: "Player left",
+          description: "Your partner has left the game.",
+          variant: "destructive",
+        });
+
+        // Update game state
+        const newState = { ...gameState };
+        newState.players[1].name = 'Waiting for player...';
+        setGameState(newState);
       });
 
       socketService.on('room-list-update', (rooms: RoomData[]) => {
@@ -109,6 +170,13 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
           variant: "destructive",
         });
       });
+
+      socketService.on('disconnect', (reason: string) => {
+        if (!mounted) return;
+        console.log('❌ Disconnected:', reason);
+        setIsConnected(false);
+        setConnectionError('Disconnected from server');
+      });
     };
 
     setupEventListeners();
@@ -116,9 +184,8 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
 
     return () => {
       mounted = false;
-      socketService.disconnect();
     };
-  }, []);
+  }, [gameState, setGameState, playerName, currentRoomData]);
 
   const createRoom = async () => {
     if (!playerName.trim()) {
@@ -130,33 +197,13 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
       return;
     }
 
-    if (!isConnected) {
-      toast({
-        title: "Connection error",
-        description: "Not connected to server. Please refresh and try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsLoading(true);
     setConnectionError(null);
     
     try {
       console.log('🚀 Attempting to create room...');
-      const newRoomId = await socketService.createRoom(playerName);
-      
+      const newRoomId = await socketService.createRoom(playerName.trim());
       console.log('✅ Room created successfully:', newRoomId);
-      
-      // Update game state for online play
-      const newState = { ...gameState };
-      newState.players[0].name = playerName;
-      newState.players[1].name = 'Waiting for player...';
-      newState.phase = 'playing';
-      newState.players[0].isCurrentPlayer = true;
-      newState.isOnline = true;
-      setGameState(newState);
-      
     } catch (error: any) {
       console.error('❌ Failed to create room:', error);
       setIsLoading(false);
@@ -179,34 +226,13 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
       return;
     }
 
-    if (!isConnected) {
-      toast({
-        title: "Connection error",
-        description: "Not connected to server. Please refresh and try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsLoading(true);
     setConnectionError(null);
     
     try {
       console.log('🚀 Attempting to join room...');
-      const success = await socketService.joinRoom(roomId, playerName);
-      
-      if (success) {
-        console.log('✅ Successfully joined room');
-        
-        // Update game state for online play
-        const newState = { ...gameState };
-        newState.players[1].name = playerName;
-        newState.players[0].name = 'Host';
-        newState.phase = 'playing';
-        newState.players[1].isCurrentPlayer = false;
-        newState.isOnline = true;
-        setGameState(newState);
-      }
+      await socketService.joinRoom(roomId.trim().toUpperCase(), playerName.trim());
+      console.log('✅ Successfully joined room');
     } catch (error: any) {
       console.error('❌ Failed to join room:', error);
       setIsLoading(false);
@@ -220,7 +246,8 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
   };
 
   const copyRoomCode = () => {
-    navigator.clipboard.writeText(roomId);
+    const codeToShare = currentRoomData?.id || roomId;
+    navigator.clipboard.writeText(codeToShare);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
     toast({
@@ -229,17 +256,33 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
     });
   };
 
-  const retryConnection = () => {
+  const retryConnection = async () => {
     setConnectionError(null);
     setIsConnected(false);
-    socketService.disconnect();
+    setIsLoading(true);
     
-    setTimeout(() => {
-      socketService.connect();
-      setTimeout(() => {
-        setIsConnected(socketService.isConnected());
-      }, 1000);
-    }, 500);
+    try {
+      socketService.disconnect();
+      await socketService.connect();
+      setIsConnected(true);
+    } catch (error: any) {
+      setConnectionError(error.message || 'Failed to reconnect');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const leaveRoom = () => {
+    socketService.leaveRoom();
+    setMode('select');
+    setCurrentRoomData(null);
+    setRoomId('');
+    
+    // Reset game state
+    const newState = { ...gameState };
+    newState.phase = 'start';
+    newState.isOnline = false;
+    setGameState(newState);
   };
 
   return (
@@ -255,6 +298,14 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
         <p className="text-lg text-gray-600">💞 Play with your partner online! 💞</p>
       </div>
 
+      {/* Connection Status */}
+      <div className="text-center mb-6">
+        <Badge variant={isConnected ? "default" : "destructive"} className="flex items-center w-fit mx-auto">
+          {isConnected ? <Wifi className="w-3 h-3 mr-1" /> : <WifiOff className="w-3 h-3 mr-1" />}
+          {isConnected ? "Connected" : "Disconnected"}
+        </Badge>
+      </div>
+
       {connectionError && (
         <Alert className="mb-6 border-red-200 bg-red-50">
           <AlertCircle className="h-4 w-4 text-red-600" />
@@ -265,13 +316,82 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
               variant="outline" 
               size="sm" 
               className="ml-2 h-6 text-xs"
+              disabled={isLoading}
             >
-              Retry
+              {isLoading ? 'Connecting...' : 'Retry'}
             </Button>
           </AlertDescription>
         </Alert>
       )}
 
+      {/* In Room View */}
+      {mode === 'in-room' && currentRoomData && (
+        <Card className="backdrop-blur-sm bg-white/80 border-green-200 shadow-xl mb-6">
+          <CardHeader className="text-center">
+            <CardTitle className="flex items-center justify-center text-2xl text-green-700">
+              <Users className="w-6 h-6 mr-2" />
+              Room: {currentRoomData.id}
+            </CardTitle>
+            <CardDescription>
+              Share this room code with your partner to start playing!
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-green-700">Room Code:</span>
+                <Button
+                  onClick={copyRoomCode}
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+              <div className="text-3xl font-mono font-bold text-green-600 bg-white p-3 rounded border text-center">
+                {currentRoomData.id}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-semibold text-gray-700">Players in Room:</h3>
+              {currentRoomData.players.map((player, index) => (
+                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                  <span className="font-medium">{player.name}</span>
+                  <Badge variant={player.isHost ? "default" : "secondary"}>
+                    {player.isHost ? "Host" : "Player"}
+                  </Badge>
+                </div>
+              ))}
+              {currentRoomData.players.length < 2 && (
+                <div className="p-2 bg-yellow-50 rounded border border-yellow-200 text-center">
+                  <span className="text-yellow-700">Waiting for another player to join...</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex space-x-2">
+              <Button
+                onClick={leaveRoom}
+                variant="outline"
+                className="flex-1"
+              >
+                Leave Room
+              </Button>
+              <Button
+                onClick={copyRoomCode}
+                className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Share Room Code
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mode Selection */}
       {mode === 'select' && (
         <Card className="backdrop-blur-sm bg-white/80 border-blue-200 shadow-xl mb-6">
           <CardHeader className="text-center">
@@ -287,7 +407,7 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Button
                 onClick={() => setMode('create')}
-                disabled={!isConnected}
+                disabled={!isConnected || isLoading}
                 className="h-16 text-lg bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Heart className="w-5 h-5 mr-2" />
@@ -295,7 +415,7 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
               </Button>
               <Button
                 onClick={() => setMode('join')}
-                disabled={!isConnected}
+                disabled={!isConnected || isLoading}
                 className="h-16 text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Heart className="w-5 h-5 mr-2" />
@@ -317,6 +437,7 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
         </Card>
       )}
 
+      {/* Create Room */}
       {mode === 'create' && (
         <Card className="backdrop-blur-sm bg-white/80 border-blue-200 shadow-xl mb-6">
           <CardHeader className="text-center">
@@ -351,28 +472,6 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
               {isLoading ? 'Creating Room...' : 'Create Room'}
             </Button>
 
-            {roomId && (
-              <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold text-blue-700">Room Code:</span>
-                  <Button
-                    onClick={copyRoomCode}
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                  >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </Button>
-                </div>
-                <div className="text-2xl font-mono font-bold text-blue-600 bg-white p-2 rounded border">
-                  {roomId}
-                </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  Share this code with your partner to join the game!
-                </p>
-              </div>
-            )}
-
             <Button
               onClick={() => setMode('select')}
               variant="outline"
@@ -385,6 +484,7 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
         </Card>
       )}
 
+      {/* Join Room */}
       {mode === 'join' && (
         <Card className="backdrop-blur-sm bg-white/80 border-purple-200 shadow-xl mb-6">
           <CardHeader className="text-center">
@@ -471,12 +571,6 @@ const RoomManager = ({ gameState, setGameState, onBackToLocal }: RoomManagerProp
           </CardContent>
         </Card>
       )}
-
-      <div className="text-center">
-        <Badge variant="outline" className="mb-2">
-          {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
-        </Badge>
-      </div>
     </div>
   );
 };
